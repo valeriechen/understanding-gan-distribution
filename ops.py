@@ -26,6 +26,17 @@ else:
   def concat(tensors, axis, *args, **kwargs):
     return tf.concat(tensors, axis, *args, **kwargs)
 
+def bn(x, is_training, scope):
+    return tf.contrib.layers.batch_norm(x,
+                                        decay=0.9,
+                                        updates_collections=None,
+                                        epsilon=1e-5,
+                                        scale=True,
+                                        is_training=is_training,
+                                        scope=scope)
+
+
+
 class batch_norm(object):
   def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
     with tf.variable_scope(name):

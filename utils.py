@@ -14,6 +14,10 @@ from six.moves import xrange
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
+import os
+
+import cv2
+
 pp = pprint.PrettyPrinter()
 
 get_stddev = lambda x, k_h, k_w: 1/math.sqrt(k_w*k_h*x.get_shape()[-1])
@@ -29,8 +33,24 @@ def get_image(image_path, input_height, input_width,
   return transform(image, input_height, input_width,
                    resize_height, resize_width, crop)
 
-def save_images(images, size, image_path):
-  return imsave(inverse_transform(images), size, image_path)
+def save_images(images, size, image_path, directory):
+    
+  images = inverse_transform(images)
+
+  for i in range(size):
+    temp = np.squeeze(images[i])
+    scipy.misc.imsave(directory+image_path+'_'+str(i)+'.png', temp)
+
+
+def save_images_withcode(images, size, image_path, directory, zs):
+    
+  images = inverse_transform(images)
+
+  for i in range(size):
+    temp = np.squeeze(images[i])
+    scipy.misc.imsave(directory+image_path+'_'+str(i)+'_'+str(zs[i][0])+'.png', temp)
+
+  #return imsave(inverse_transform(images), size, image_path)
 
 def imread(path, grayscale = False):
   if (grayscale):
@@ -64,6 +84,8 @@ def merge(images, size):
 
 def imsave(images, size, path):
   image = np.squeeze(merge(images, size))
+
+  print(image.shape)
   return scipy.misc.imsave(path, image)
 
 def center_crop(x, crop_h, crop_w,
@@ -171,6 +193,9 @@ def make_gif(images, fname, duration=2, true_image=False):
 
 def visualize(sess, dcgan, config, option):
   image_frame_dim = int(math.ceil(config.batch_size**.5))
+
+  mnist_classes = 2 # used to be 10
+
   if option == 0:
     z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
     samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample})
@@ -184,8 +209,8 @@ def visualize(sess, dcgan, config, option):
         z[idx] = values[kdx]
 
       if config.dataset == "mnist":
-        y = np.random.choice(10, config.batch_size)
-        y_one_hot = np.zeros((config.batch_size, 10))
+        y = np.random.choice(mnist_classes, config.batch_size)
+        y_one_hot = np.zeros((config.batch_size, mnist_classes))
         y_one_hot[np.arange(config.batch_size), y] = 1
 
         samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample, dcgan.y: y_one_hot})
@@ -204,8 +229,8 @@ def visualize(sess, dcgan, config, option):
         z[idx] = values[kdx]
 
       if config.dataset == "mnist":
-        y = np.random.choice(10, config.batch_size)
-        y_one_hot = np.zeros((config.batch_size, 10))
+        y = np.random.choice(mnist_classes, config.batch_size)
+        y_one_hot = np.zeros((config.batch_size, mnist_classes))
         y_one_hot[np.arange(config.batch_size), y] = 1
 
         samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample, dcgan.y: y_one_hot})

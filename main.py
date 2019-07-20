@@ -3,12 +3,13 @@ import scipy.misc
 import numpy as np
 
 from model import DCGAN
+from model1 import infoGAN
 from utils import pp, visualize, to_json, show_all_variables
 
 import tensorflow as tf
 
 flags = tf.app.flags
-flags.DEFINE_integer("epoch", 25, "Epoch to train [25]")
+flags.DEFINE_integer("epoch", 5, "Epoch to train [25]")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam [0.0002]")
 flags.DEFINE_float("beta1", 0.5, "Momentum term of adam [0.5]")
 flags.DEFINE_float("train_size", np.inf, "The size of train images [np.inf]")
@@ -26,6 +27,12 @@ flags.DEFINE_boolean("train", False, "True for training, False for testing [Fals
 flags.DEFINE_boolean("crop", False, "True for training, False for testing [False]")
 flags.DEFINE_boolean("visualize", False, "True for visualizing, False for nothing [False]")
 flags.DEFINE_integer("generate_test_images", 100, "Number of images to generate during test. [100]")
+flags.DEFINE_float("image_split", 0.5, "ratio of class 1 to class 2")
+flags.DEFINE_integer("mnist_1", 0, "First")
+flags.DEFINE_integer("mnist_2", 1, "Number of images to generate during test. [100]")
+flags.DEFINE_string("output_dir", "blah", "Folder to write images to")
+flags.DEFINE_boolean("infogan", False, "True if running infogan")
+
 FLAGS = flags.FLAGS
 
 def main(_):
@@ -43,10 +50,13 @@ def main(_):
 
   #gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
   run_config = tf.ConfigProto()
-  run_config.gpu_options.allow_growth=True
+  run_config.gpu_options.per_process_gpu_memory_fraction = 0.5
+  #run_config.gpu_options.allow_growth=True
 
   with tf.Session(config=run_config) as sess:
-    if FLAGS.dataset == 'mnist':
+
+    if FLAGS.dataset == 'mnist' and FLAGS.infogan == False:
+      #y_dim = 10
       dcgan = DCGAN(
           sess,
           input_width=FLAGS.input_width,
@@ -55,14 +65,31 @@ def main(_):
           output_height=FLAGS.output_height,
           batch_size=FLAGS.batch_size,
           sample_num=FLAGS.batch_size,
-          y_dim=10,
+          y_dim=2, 
           z_dim=FLAGS.generate_test_images,
           dataset_name=FLAGS.dataset,
           input_fname_pattern=FLAGS.input_fname_pattern,
           crop=FLAGS.crop,
           checkpoint_dir=FLAGS.checkpoint_dir,
           sample_dir=FLAGS.sample_dir,
-          data_dir=FLAGS.data_dir)
+          data_dir=FLAGS.data_dir,
+          image_split=FLAGS.image_split,
+          mnist_1=FLAGS.mnist_1,
+          mnist_2=FLAGS.mnist_2,
+          output_dir=FLAGS.output_dir)
+    elif FLAGS.infogan == True:
+      dcgan = infoGAN(
+          sess,
+          epoch=FLAGS.epoch,
+          batch_size=FLAGS.batch_size,
+          z_dim=100,
+          dataset_name=FLAGS.dataset,
+          checkpoint_dir=FLAGS.checkpoint_dir,
+          result_dir=FLAGS.output_dir,
+          mnist_1=FLAGS.mnist_1,
+          mnist_2=FLAGS.mnist_2,
+          image_split=FLAGS.image_split,
+        )
     else:
       dcgan = DCGAN(
           sess,
@@ -78,7 +105,8 @@ def main(_):
           crop=FLAGS.crop,
           checkpoint_dir=FLAGS.checkpoint_dir,
           sample_dir=FLAGS.sample_dir,
-          data_dir=FLAGS.data_dir)
+          data_dir=FLAGS.data_dir,
+          image_split=FLAGS.image_split)
 
     show_all_variables()
 
@@ -96,8 +124,8 @@ def main(_):
     #                 [dcgan.h4_w, dcgan.h4_b, None])
 
     # Below is codes for visualization
-    OPTION = 1
-    visualize(sess, dcgan, FLAGS, OPTION)
+    #OPTION = 1
+    #visualize(sess, dcgan, FLAGS, OPTION)
 
 if __name__ == '__main__':
   tf.app.run()

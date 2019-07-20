@@ -6,6 +6,7 @@ from glob import glob
 import tensorflow as tf
 import numpy as np
 from six.moves import xrange
+import pandas as pd
 
 from ops import *
 from utils import *
@@ -18,7 +19,7 @@ class DCGAN(object):
          batch_size=64, sample_num = 64, output_height=64, output_width=64,
          y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
          gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
-         input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data'):
+         input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data', image_split=0.5, mnist_1=0, mnist_2=1, output_dir="blah"):
     """
 
     Args:
@@ -43,7 +44,7 @@ class DCGAN(object):
     self.output_height = output_height
     self.output_width = output_width
 
-    self.y_dim = y_dim
+    self.y_dim = None
     self.z_dim = z_dim
 
     self.gf_dim = gf_dim
@@ -70,13 +71,51 @@ class DCGAN(object):
     self.input_fname_pattern = input_fname_pattern
     self.checkpoint_dir = checkpoint_dir
     self.data_dir = data_dir
+    self.image_split=image_split
+
+    self.mnist_1 = mnist_1
+    self.mnist_2 = mnist_2
+
+    self.output_dir = output_dir
 
     if self.dataset_name == 'mnist':
       self.data_X, self.data_y = self.load_mnist()
       self.c_dim = self.data_X[0].shape[-1]
+
     else:
-      data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern)
-      self.data = glob(data_path)
+      #data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern)
+      #self.data = glob(data_path)
+      #print(self.data)
+
+      data_path = './data/celebA/'
+
+      df = pd.read_csv('list_attr_celeba.csv')
+
+      total = 90000
+
+      num_male = int(float(image_split)*total)
+      num_female = int(float(1-image_split)*total)
+
+      all_male = np.where(df["Male"] == 1)
+      all_male = all_male[0].tolist()
+      all_female = np.where(df["Male"] == -1)
+      all_female = all_female[0].tolist()
+
+      index_male = np.random.randint(len(all_male), size=num_male)
+      index_female = np.random.randint(len(all_female), size=num_female)
+      
+      all_images = []
+
+      for item in index_male:
+        all_images.append(data_path+df.iloc[all_male[item],0])
+      for item in index_female:
+        all_images.append(data_path+df.iloc[all_female[item],0])
+
+      self.data = all_images
+
+      #print(all_images)
+      #print(len(all_images))
+
       if len(self.data) == 0:
         raise Exception("[!] No data found in '" + data_path + "'")
       np.random.shuffle(self.data)
@@ -94,10 +133,10 @@ class DCGAN(object):
     self.build_model()
 
   def build_model(self):
-    if self.y_dim:
-      self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
-    else:
-      self.y = None
+    #if self.y_dim:
+    #  self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
+    #else:
+    self.y = None
 
     if self.crop:
       image_dims = [self.output_height, self.output_width, self.c_dim]
@@ -137,7 +176,18 @@ class DCGAN(object):
 
     self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real)
     self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake)
-                          
+
+
+    ##NEW ADDITIONS.
+    self.d_loss_real_0s = tf.reduce_mean(
+      sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
+    self.d_loss_real_1s = tf.reduce_mean(
+      sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
+    self.d_loss_real_0_sum = scalar_summary("d_loss_real_0s", self.d_loss_real_0s)
+    self.d_loss_real_1_sum = scalar_summary("d_loss_real_1s", self.d_loss_real_1s)
+    ##ENDS.
+
+
     self.d_loss = self.d_loss_real + self.d_loss_fake
 
     self.g_loss_sum = scalar_summary("g_loss", self.g_loss)
@@ -170,7 +220,7 @@ class DCGAN(object):
     
     if config.dataset == 'mnist':
       sample_inputs = self.data_X[0:self.sample_num]
-      sample_labels = self.data_y[0:self.sample_num]
+      #sample_labels = self.data_y[0:self.sample_num]
     else:
       sample_files = self.data[0:self.sample_num]
       sample = [
@@ -207,7 +257,7 @@ class DCGAN(object):
       for idx in xrange(0, int(batch_idxs)):
         if config.dataset == 'mnist':
           batch_images = self.data_X[idx*config.batch_size:(idx+1)*config.batch_size]
-          batch_labels = self.data_y[idx*config.batch_size:(idx+1)*config.batch_size]
+          #batch_labels = self.data_y[idx*config.batch_size:(idx+1)*config.batch_size]
         else:
           batch_files = self.data[idx*config.batch_size:(idx+1)*config.batch_size]
           batch = [
@@ -232,7 +282,7 @@ class DCGAN(object):
             feed_dict={ 
               self.inputs: batch_images,
               self.z: batch_z,
-              self.y:batch_labels,
+              #self.y:batch_labels,
             })
           self.writer.add_summary(summary_str, counter)
 
@@ -240,26 +290,39 @@ class DCGAN(object):
           _, summary_str = self.sess.run([g_optim, self.g_sum],
             feed_dict={
               self.z: batch_z, 
-              self.y:batch_labels,
+              #self.y:batch_labels,
             })
           self.writer.add_summary(summary_str, counter)
 
           # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
           _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z, self.y:batch_labels })
+            feed_dict={ self.z: batch_z })
           self.writer.add_summary(summary_str, counter)
           
           errD_fake = self.d_loss_fake.eval({
               self.z: batch_z, 
-              self.y:batch_labels
+              #self.y:batch_labels
           })
           errD_real = self.d_loss_real.eval({
               self.inputs: batch_images,
-              self.y:batch_labels
+              #self.y:batch_labels
           })
+
+          # errD_real_0s = self.d_loss_real.eval({
+          #     self.inputs: self.all0s_x,
+          #     self.y:self.all0s_y
+          # })
+
+          # errD_real_1s = self.d_loss_real.eval({
+          #     self.inputs: self.all1s_x,
+          #     self.y: self.all1s_y 
+          # })
+
+          #print(errD_real_0s, errD_real_1s)
+
           errG = self.g_loss.eval({
               self.z: batch_z,
-              self.y: batch_labels
+              #self.y: batch_labels
           })
         else:
           # Update D network
@@ -286,18 +349,33 @@ class DCGAN(object):
           % (epoch, config.epoch, idx, batch_idxs,
             time.time() - start_time, errD_fake+errD_real, errG))
 
-        if np.mod(counter, 100) == 1:
+        #if np.mod(counter, 20) == 1:
+        if epoch == config.epoch-1:
           if config.dataset == 'mnist':
             samples, d_loss, g_loss = self.sess.run(
               [self.sampler, self.d_loss, self.g_loss],
               feed_dict={
                   self.z: sample_z,
                   self.inputs: sample_inputs,
-                  self.y:sample_labels,
+                  #self.y:sample_labels,
               }
             )
-            save_images(samples, image_manifold_size(samples.shape[0]),
-                  './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
+
+            #print(samples.shape)
+            #print(image_manifold_size(samples.shape[0]))
+
+            #directory = 'celeb_gen/'
+
+            directory = self.output_dir+'/Nums'+str(self.mnist_1)+str(self.mnist_2)+'/split'+str(self.image_split)+'/'
+
+            #directory = 'experiment_unlabeled/Nums'+str(self.mnist_1)+str(self.mnist_2)+'/split'+str(self.image_split)+'/'
+            #directory = 'experiment_redo/Nums'+str(self.mnist_1)+str(self.mnist_2)+'/split'+str(self.image_split)+'/'
+            save_images(samples, samples.shape[0], 'train_{:02d}_{:04d}'.format(epoch, idx), directory)
+
+            #save_images(samples, samples.shape[0], './{}/train_{:02d}_{:04d}'.format(config.sample_dir, epoch, idx))
+
+            #save_images(samples, image_manifold_size(samples.shape[0]),
+            #      './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
             print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss)) 
           else:
             try:
@@ -308,8 +386,11 @@ class DCGAN(object):
                     self.inputs: sample_inputs,
                 },
               )
-              save_images(samples, image_manifold_size(samples.shape[0]),
-                    './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
+              #directory = 'celeb_gen/'
+              directory = 'celeb_experiment/split'+str(self.image_split)+'/'
+              save_images(samples, samples.shape[0], 'train_{:02d}_{:04d}'.format(epoch, idx), directory)
+              #save_images(samples, image_manifold_size(samples.shape[0]),
+              #      './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
               print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss)) 
             except:
               print("one pic error!...")
@@ -469,6 +550,7 @@ class DCGAN(object):
     fd = open(os.path.join(data_dir,'train-labels-idx1-ubyte'))
     loaded = np.fromfile(file=fd,dtype=np.uint8)
     trY = loaded[8:].reshape((60000)).astype(np.float)
+    #trY = loaded[8:].reshape(60000).astype(np.float)
 
     fd = open(os.path.join(data_dir,'t10k-images-idx3-ubyte'))
     loaded = np.fromfile(file=fd,dtype=np.uint8)
@@ -477,12 +559,52 @@ class DCGAN(object):
     fd = open(os.path.join(data_dir,'t10k-labels-idx1-ubyte'))
     loaded = np.fromfile(file=fd,dtype=np.uint8)
     teY = loaded[8:].reshape((10000)).astype(np.float)
+    #teY = loaded[8:].reshape(10000).astype(np.float)
 
     trY = np.asarray(trY)
     teY = np.asarray(teY)
     
     X = np.concatenate((trX, teX), axis=0)
     y = np.concatenate((trY, teY), axis=0).astype(np.int)
+
+    #FILTER HERE FOR ONLY 2, SAMPLE
+
+    X0 = X[y==self.mnist_1]
+    y0 = y[y==self.mnist_1]
+
+    X1 = X[y==self.mnist_2]
+    y1 = y[y==self.mnist_2]
+
+    total = 6300
+
+    num_0s = int(float(total) * self.image_split)
+    num_1s = int(float(total) * (1-self.image_split))
+
+    print(num_0s, num_1s)
+
+    idx_0s = np.random.randint(total, size=num_0s)
+    idx_1s = np.random.randint(total, size=num_1s)
+
+
+    X0 = X0[idx_0s]
+    y0 = y0[idx_0s]
+
+    X1 = X1[idx_1s]
+    y1 = y1[idx_1s]   
+
+    X = np.concatenate((X0, X1), axis=0)
+    y = np.concatenate((y0, y1), axis=0).astype(np.int)
+
+    #X = X[(y == 0) | (y == 1)]
+    #y = y[(y == 0) | (y == 1)]
+
+    #USING self.image_split here!!!
+
+    #temp1 = y[y == 0]
+    #temp2 = y[y == 1]
+    #print(len(temp1), len(temp2))
+
+    self.y_dim = None
     
     seed = 547
     np.random.seed(seed)
@@ -490,9 +612,13 @@ class DCGAN(object):
     np.random.seed(seed)
     np.random.shuffle(y)
     
-    y_vec = np.zeros((len(y), self.y_dim), dtype=np.float)
+    y_vec = np.zeros((len(y), 2), dtype=np.float)
     for i, label in enumerate(y):
-      y_vec[i,y[i]] = 1.0
+      if y[i] == self.mnist_1:
+        y_vec[i, 0] = 1.0
+      else:
+        y_vec[i, 1] = 1.0
+      #y_vec[i,y[i]] = 1.0 # need to fix this.. 
     
     return X/255.,y_vec
 
